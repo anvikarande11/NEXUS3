@@ -1,10 +1,21 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Pen, Eraser, Trash2, Save, Eye, EyeOff, Hand } from 'lucide-react'
-import { useDashboardStore, type CollabDrawing } from '@/lib/store'
+import { X, Pen, Highlighter, Eraser, Trash2, RotateCcw, RotateCw, MessageSquare, Hand, Grid3x3 } from 'lucide-react'
+import { useDashboardStore } from '@/lib/store'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+
+interface CanvasDrawState {
+  isDrawing: boolean
+  lastX: number
+  lastY: number
+  tool: 'pen' | 'highlighter' | 'eraser' | 'text'
+  color: string
+  lineWidth: number
+  opacity: number
+}
 
 export function CollabWhiteboard() {
   const {
@@ -14,157 +25,202 @@ export function CollabWhiteboard() {
     startSession,
     endSession,
     addDrawing,
+    undoDrawing,
+    redoDrawing,
     clearDrawings,
     addParticipant,
+    addWhiteboardMessage,
+    drawingUndoStack,
+    drawingRedoStack,
+    isCVModeActive,
+    setCVModeActive,
   } = useDashboardStore()
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const [isDrawing, setIsDrawing] = useState(false)
-  const [tool, setTool] = useState<'pen' | 'eraser'>('pen')
-  const [color, setColor] = useState('#22c55e')
-  const [lineWidth, setLineWidth] = useState(2)
-  const [lastX, setLastX] = useState(0)
-  const [lastY, setLastY] = useState(0)
-  const [cvMode, setCvMode] = useState(false)
-  const [showCVInstructions, setShowCVInstructions] = useState(false)
-  const [detectedHands, setDetectedHands] = useState<Array<{ x: number; y: number; isOpen: boolean }>>([])
-  const [cameraActive, setCameraActive] = useState(false)
+  const contextRef = useRef<CanvasRenderingContext2D | null>(null)
+  
+  const [drawState, setDrawState] = useState<CanvasDrawState>({
+    isDrawing: false,
+    lastX: 0,
+    lastY: 0,
+    tool: 'pen',
+    color: '#22c55e',
+    lineWidth: 2,
+    opacity: 1,
+  })
 
-  // Initialize session
+  const [isChatOpen, setIsChatOpen] = useState(false)
+  const [chatInput, setChatInput] = useState('')
+  const [showGridBg, setShowGridBg] = useState(true)
+  const [detectedHands, setDetectedHands] = useState<Array<{ x: number; y: number; isOpen: boolean; isPinched: boolean }>>([])
+  const [showCVInstructions, setShowCVInstructions] = useState(false)
+
+  // Initialize session on open
   useEffect(() => {
     if (isWhiteboardOpen && !currentSession) {
       startSession('DSA', 'Study Session')
-      addParticipant({
-        id: 'user-1',
-        name: 'You',
-        avatar: 'ME',
-        color: '#22c55e',
-        cursorX: 0,
-        cursorY: 0,
-      })
     }
-  }, [isWhiteboardOpen, currentSession, startSession, addParticipant])
+  }, [isWhiteboardOpen, currentSession, startSession])
 
-  // Initialize CV mode - show instructions on first toggle
+  // Initialize canvas
   useEffect(() => {
-    if (cvMode && !showCVInstructions) {
-      setShowCVInstructions(true)
-      const timer = setTimeout(() => setShowCVInstructions(false), 4000)
-      return () => clearTimeout(timer)
+    if (!canvasRef.current) return
+
+    canvasRef.current.width = window.innerWidth - 320
+    canvasRef.current.height = window.innerHeight - 120
+
+    const context = canvasRef.current.getContext('2d', { willReadFrequently: true })
+    if (!context) return
+
+    contextRef.current = context
+    drawGridBackground(context, canvasRef.current.width, canvasRef.current.height)
+  }, [isWhiteboardOpen])
+
+  const drawGridBackground = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    if (!showGridBg) return
+    
+    const gridSize = 20
+    ctx.strokeStyle = 'rgba(100, 116, 139, 0.1)'
+    ctx.lineWidth = 0.5
+
+    for (let x = 0; x < width; x += gridSize) {
+      ctx.beginPath()
+      ctx.moveTo(x, 0)
+      ctx.lineTo(x, height)
+      ctx.stroke()
     }
-  }, [cvMode])
+
+    for (let y = 0; y < height; y += gridSize) {
+      ctx.beginPath()
+      ctx.moveTo(0, y)
+      ctx.lineTo(width, y)
+      ctx.stroke()
+    }
+  }
 
   // Simulate hand gesture detection
   useEffect(() => {
-    if (!cvMode) {
-      setCameraActive(false)
+    if (!isCVModeActive) {
+      if (!showCVInstructions) return
       return
     }
 
-    setCameraActive(true)
-    // Simulate hand detection with random positions
+    if (!showCVInstructions) {
+      setShowCVInstructions(true)
+      const timer = setTimeout(() => setShowCVInstructions(false), 3000)
+      return () => clearTimeout(timer)
+    }
+
     const interval = setInterval(() => {
       if (canvasRef.current) {
-        const x = Math.random() * canvasRef.current.width
-        const y = Math.random() * canvasRef.current.height
-        setDetectedHands([
-          { x, y, isOpen: Math.random() > 0.5 }
-        ])
+        const hands: typeof detectedHands = []
+        const numHands = Math.random() > 0.7 ? 1 : 0
+        
+        for (let i = 0; i < numHands; i++) {
+          hands.push({
+            x: Math.random() * (canvasRef.current.width - 100) + 50,
+            y: Math.random() * (canvasRef.current.height - 100) + 50,
+            isOpen: Math.random() > 0.4,
+            isPinched: Math.random() > 0.8
+          })
+        }
+        
+        setDetectedHands(hands)
       }
-    }, 200)
+    }, 300)
 
     return () => clearInterval(interval)
-  }, [cvMode])
+  }, [isCVModeActive, showCVInstructions])
 
-  // Redraw canvas when drawings change
-  useEffect(() => {
-    if (!canvasRef.current || !currentSession) return
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const { offsetX, offsetY } = e.nativeEvent
+    setDrawState(prev => ({
+      ...prev,
+      isDrawing: true,
+      lastX: offsetX,
+      lastY: offsetY,
+    }))
+  }
 
-    const ctx = canvasRef.current.getContext('2d')
-    if (!ctx) return
+  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!drawState.isDrawing || !contextRef.current) return
 
-    // Clear canvas
-    ctx.fillStyle = '#0f172a'
-    ctx.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height)
+    const { offsetX, offsetY } = e.nativeEvent
+    const ctx = contextRef.current
 
-    // Redraw all drawings
-    currentSession.drawings.forEach((drawing) => {
-      ctx.strokeStyle = drawing.type === 'eraser' ? '#0f172a' : drawing.color
-      ctx.lineWidth = drawing.width
+    if (drawState.tool === 'pen') {
+      ctx.strokeStyle = drawState.color
+      ctx.lineWidth = drawState.lineWidth
+      ctx.globalAlpha = drawState.opacity
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
-
-      if (drawing.points.length > 0) {
-        ctx.beginPath()
-        ctx.moveTo(drawing.points[0].x, drawing.points[0].y)
-        drawing.points.forEach((point) => {
-          ctx.lineTo(point.x, point.y)
-        })
-        ctx.stroke()
-      }
-    })
-  }, [currentSession?.drawings])
-
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current) return
-
-    const rect = canvasRef.current.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-
-    setIsDrawing(true)
-    setLastX(x)
-    setLastY(y)
-  }
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current || !isDrawing || !currentSession) return
-
-    const rect = canvasRef.current.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-
-    const ctx = canvasRef.current.getContext('2d')
-    if (!ctx) return
-
-    ctx.strokeStyle = tool === 'eraser' ? '#0f172a' : color
-    ctx.lineWidth = lineWidth
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
+    } else if (drawState.tool === 'highlighter') {
+      ctx.strokeStyle = drawState.color
+      ctx.lineWidth = drawState.lineWidth * 3
+      ctx.globalAlpha = 0.4
+      ctx.lineCap = 'square'
+    } else if (drawState.tool === 'eraser') {
+      ctx.clearRect(offsetX - drawState.lineWidth, offsetY - drawState.lineWidth, drawState.lineWidth * 2, drawState.lineWidth * 2)
+      ctx.globalAlpha = 1
+      return
+    }
 
     ctx.beginPath()
-    ctx.moveTo(lastX, lastY)
-    ctx.lineTo(x, y)
+    ctx.moveTo(drawState.lastX, drawState.lastY)
+    ctx.lineTo(offsetX, offsetY)
     ctx.stroke()
+    ctx.globalAlpha = 1
 
-    setLastX(x)
-    setLastY(y)
+    setDrawState(prev => ({
+      ...prev,
+      lastX: offsetX,
+      lastY: offsetY,
+    }))
+
+    addDrawing({
+      type: 'stroke',
+      participantId: 'user-1',
+      data: {
+        tool: drawState.tool,
+        fromX: drawState.lastX,
+        fromY: drawState.lastY,
+        toX: offsetX,
+        toY: offsetY,
+        color: drawState.color,
+        lineWidth: drawState.lineWidth,
+      }
+    })
   }
 
-  const handleMouseUp = () => {
-    if (!isDrawing || !canvasRef.current || !currentSession) return
+  const endDrawing = () => {
+    setDrawState(prev => ({
+      ...prev,
+      isDrawing: false,
+    }))
+  }
 
-    setIsDrawing(false)
-
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    // Get the current drawing
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-    const points: { x: number; y: number }[] = []
-
-    // Simple point extraction (in real implementation, would track during drawing)
+  const handleClear = useCallback(() => {
+    if (!canvasRef.current || !contextRef.current) return
+    
+    contextRef.current.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
+    drawGridBackground(contextRef.current, canvasRef.current.width, canvasRef.current.height)
+    clearDrawings()
+    
     addDrawing({
-      id: crypto.randomUUID(),
-      points,
-      color,
-      width: lineWidth,
-      type: tool,
-      createdBy: 'user-1',
-      timestamp: Date.now(),
+      type: 'clear',
+      participantId: 'user-1',
+      data: {}
     })
+  }, [clearDrawings, addDrawing, showGridBg])
+
+  const handleSendMessage = () => {
+    if (!chatInput.trim()) return
+    addWhiteboardMessage({
+      participantId: 'user-1',
+      participantName: 'You',
+      content: chatInput,
+    })
+    setChatInput('')
   }
 
   const handleClose = () => {
@@ -172,50 +228,58 @@ export function CollabWhiteboard() {
     toggleWhiteboard()
   }
 
+  if (!isWhiteboardOpen) return null
+
   return (
     <AnimatePresence>
-      {isWhiteboardOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col"
-        >
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 bg-background flex"
+      >
+        {/* Main Canvas Area */}
+        <div className="flex-1 flex flex-col bg-slate-950 relative overflow-hidden">
           {/* Header */}
-          <div className="border-b border-border bg-card/95 backdrop-blur px-6 py-4 flex items-center justify-between">
+          <motion.div
+            initial={{ y: -60 }}
+            animate={{ y: 0 }}
+            className="h-14 border-b border-border bg-card/95 backdrop-blur px-6 py-3 flex items-center justify-between"
+          >
             <div>
               <h2 className="text-lg font-bold text-card-foreground">
-                {currentSession?.title || 'Collaborative Whiteboard'}
+                {currentSession?.title || 'Whiteboard'}
               </h2>
-              <p className="text-sm text-muted-foreground">
-                {currentSession?.participants.length || 1} participant{(currentSession?.participants.length || 1) !== 1 ? 's' : ''}
-                {cvMode && ' • Hand Gesture Mode Active'}
+              <p className="text-xs text-muted-foreground">
+                {currentSession?.participants.length || 1} participant(s)
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              {/* CV Mode Toggle */}
+            <div className="flex items-center gap-3">
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => setCvMode(!cvMode)}
-                className={`px-3 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-all ${
-                  cvMode
-                    ? 'bg-accent text-accent-foreground'
+                onClick={() => setShowGridBg(!showGridBg)}
+                className={`p-2 rounded-lg transition-all ${
+                  showGridBg
+                    ? 'bg-primary/20 text-primary'
                     : 'bg-muted text-muted-foreground hover:bg-muted/80'
                 }`}
-                title="Computer Vision Mode"
+                title="Toggle grid background"
               >
-                {cvMode ? (
-                  <>
-                    <Hand className="w-4 h-4" />
-                    CV Mode On
-                  </>
-                ) : (
-                  <>
-                    <Hand className="w-4 h-4 opacity-50" />
-                    CV Mode
-                  </>
-                )}
+                <Grid3x3 className="w-4 h-4" />
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setCVModeActive(!isCVModeActive)}
+                className={`p-2 rounded-lg transition-all ${
+                  isCVModeActive
+                    ? 'bg-accent/20 text-accent'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                }`}
+                title="Toggle CV Mode (Hand Gestures)"
+              >
+                <Hand className="w-4 h-4" />
               </motion.button>
               <button
                 onClick={handleClose}
@@ -224,199 +288,388 @@ export function CollabWhiteboard() {
                 <X className="w-5 h-5" />
               </button>
             </div>
+          </motion.div>
+
+          {/* Canvas */}
+          <div className="flex-1 relative overflow-hidden">
+            <canvas
+              ref={canvasRef}
+              onMouseDown={startDrawing}
+              onMouseMove={draw}
+              onMouseUp={endDrawing}
+              onMouseLeave={endDrawing}
+              className="absolute inset-0 w-full h-full cursor-crosshair"
+            />
+
+            {/* CV Mode Overlay */}
+            <CVModeOverlay 
+              isActive={isCVModeActive}
+              hands={detectedHands}
+              showInstructions={showCVInstructions}
+            />
           </div>
 
-          {/* Canvas and Toolbar */}
-          <div className="flex-1 flex gap-4 p-4">
-            {/* Toolbar */}
-            <div className="w-20 bg-card/50 border border-border rounded-lg p-3 flex flex-col gap-2">
-              {/* Tool Buttons */}
-              <button
-                onClick={() => setTool('pen')}
-                className={`p-2 rounded-lg transition-colors ${
-                  tool === 'pen'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted hover:bg-muted/80 text-muted-foreground'
-                }`}
-                title="Pen"
+          {/* Toolbar */}
+          <WhiteboardToolbar
+            drawState={drawState}
+            setDrawState={setDrawState}
+            onUndo={undoDrawing}
+            onRedo={redoDrawing}
+            onClear={handleClear}
+            canUndo={drawingUndoStack.length > 0}
+            canRedo={drawingRedoStack.length > 0}
+            onToggleChat={() => setIsChatOpen(!isChatOpen)}
+          />
+        </div>
+
+        {/* Chat Panel */}
+        {isChatOpen && (
+          <WhiteboardChatPanel
+            messages={currentSession?.messages || []}
+            participants={currentSession?.participants || []}
+            onSendMessage={handleSendMessage}
+            chatInput={chatInput}
+            onChatInputChange={setChatInput}
+          />
+        )}
+
+        {/* Participant Avatars */}
+        <ParticipantAvatars participants={currentSession?.participants || []} />
+      </motion.div>
+    </AnimatePresence>
+  )
+}
+
+function WhiteboardToolbar({
+  drawState,
+  setDrawState,
+  onUndo,
+  onRedo,
+  onClear,
+  canUndo,
+  canRedo,
+  onToggleChat,
+}: {
+  drawState: CanvasDrawState
+  setDrawState: (state: CanvasDrawState) => void
+  onUndo: () => void
+  onRedo: () => void
+  onClear: () => void
+  canUndo: boolean
+  canRedo: boolean
+  onToggleChat: () => void
+}) {
+  return (
+    <motion.div
+      initial={{ y: 60 }}
+      animate={{ y: 0 }}
+      className="h-16 border-t border-border bg-card/95 backdrop-blur px-4 py-3 flex items-center gap-2 overflow-x-auto"
+    >
+      {/* Tool Selection */}
+      <div className="flex items-center gap-1 border-r border-border pr-3">
+        {[
+          { id: 'pen', icon: Pen, label: 'Pen' },
+          { id: 'highlighter', icon: Highlighter, label: 'Highlighter' },
+          { id: 'eraser', icon: Eraser, label: 'Eraser' },
+        ].map((tool) => (
+          <motion.button
+            key={tool.id}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setDrawState({ ...drawState, tool: tool.id as any })}
+            className={`p-2 rounded-lg transition-all ${
+              drawState.tool === tool.id
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground hover:bg-muted/80'
+            }`}
+            title={tool.label}
+          >
+            <tool.icon className="w-4 h-4" />
+          </motion.button>
+        ))}
+      </div>
+
+      {/* Color Picker */}
+      <div className="flex items-center gap-2 border-r border-border pr-3">
+        <input
+          type="color"
+          value={drawState.color}
+          onChange={(e) => setDrawState({ ...drawState, color: e.target.value })}
+          className="w-8 h-8 rounded cursor-pointer border border-border"
+        />
+        <span className="text-xs text-muted-foreground">Color</span>
+      </div>
+
+      {/* Line Width */}
+      <div className="flex items-center gap-2 border-r border-border pr-3">
+        <input
+          type="range"
+          min="1"
+          max="20"
+          value={drawState.lineWidth}
+          onChange={(e) => setDrawState({ ...drawState, lineWidth: parseInt(e.target.value) })}
+          className="w-24 h-2 rounded-lg bg-muted cursor-pointer"
+        />
+        <span className="text-xs text-muted-foreground">{drawState.lineWidth}px</span>
+      </div>
+
+      {/* Opacity */}
+      <div className="flex items-center gap-2 border-r border-border pr-3">
+        <input
+          type="range"
+          min="0.1"
+          max="1"
+          step="0.1"
+          value={drawState.opacity}
+          onChange={(e) => setDrawState({ ...drawState, opacity: parseFloat(e.target.value) })}
+          className="w-24 h-2 rounded-lg bg-muted cursor-pointer"
+        />
+        <span className="text-xs text-muted-foreground">{Math.round(drawState.opacity * 100)}%</span>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-2 border-r border-border pr-3 ml-auto">
+        <Button
+          size="sm"
+          variant={canUndo ? 'default' : 'ghost'}
+          onClick={onUndo}
+          disabled={!canUndo}
+          className="text-xs"
+        >
+          <RotateCcw className="w-4 h-4" />
+        </Button>
+        <Button
+          size="sm"
+          variant={canRedo ? 'default' : 'ghost'}
+          onClick={onRedo}
+          disabled={!canRedo}
+          className="text-xs"
+        >
+          <RotateCw className="w-4 h-4" />
+        </Button>
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={onClear}
+          className="text-xs"
+        >
+          <Trash2 className="w-4 h-4" />
+        </Button>
+      </div>
+
+      {/* Chat Toggle */}
+      <motion.button
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={onToggleChat}
+        className="p-2 rounded-lg bg-primary/20 text-primary hover:bg-primary/30 transition-all ml-auto"
+        title="Toggle chat panel"
+      >
+        <MessageSquare className="w-4 h-4" />
+      </motion.button>
+    </motion.div>
+  )
+}
+
+function WhiteboardChatPanel({
+  messages,
+  participants,
+  onSendMessage,
+  chatInput,
+  onChatInputChange,
+}: {
+  messages: any[]
+  participants: any[]
+  onSendMessage: () => void
+  chatInput: string
+  onChatInputChange: (input: string) => void
+}) {
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  return (
+    <motion.div
+      initial={{ x: 320 }}
+      animate={{ x: 0 }}
+      exit={{ x: 320 }}
+      className="w-80 border-l border-border bg-card/95 backdrop-blur flex flex-col"
+    >
+      <div className="p-4 border-b border-border">
+        <h3 className="font-semibold text-card-foreground flex items-center gap-2">
+          <MessageSquare className="w-4 h-4" />
+          Whiteboard Chat
+        </h3>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {messages.map((msg) => (
+          <motion.div
+            key={msg.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-1"
+          >
+            <p className="text-xs font-semibold text-primary">{msg.participantName}</p>
+            <p className="text-sm text-card-foreground bg-muted/50 p-2 rounded">
+              {msg.content}
+            </p>
+          </motion.div>
+        ))}
+        <div ref={messagesEndRef} />
+      </div>
+
+      <div className="p-3 border-t border-border flex gap-2">
+        <Input
+          value={chatInput}
+          onChange={(e) => onChatInputChange(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && onSendMessage()}
+          placeholder="Type message..."
+          className="text-sm"
+        />
+        <Button
+          size="sm"
+          onClick={onSendMessage}
+          disabled={!chatInput.trim()}
+        >
+          Send
+        </Button>
+      </div>
+    </motion.div>
+  )
+}
+
+function ParticipantAvatars({ participants }: { participants: any[] }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="absolute top-20 right-6 flex flex-col gap-2"
+    >
+      {participants.map((participant) => (
+        <motion.div
+          key={participant.id}
+          whileHover={{ scale: 1.1 }}
+          className="w-10 h-10 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-xs font-bold border-2 border-border shadow-lg"
+          style={{
+            backgroundImage: `linear-gradient(135deg, ${participant.color}, ${participant.color}dd)`,
+          }}
+          title={participant.name}
+        >
+          {participant.avatar}
+        </motion.div>
+      ))}
+    </motion.div>
+  )
+}
+
+function CVModeOverlay({
+  isActive,
+  hands,
+  showInstructions,
+}: {
+  isActive: boolean
+  hands: Array<{ x: number; y: number; isOpen: boolean; isPinched: boolean }>
+  showInstructions: boolean
+}) {
+  return (
+    <AnimatePresence>
+      {isActive && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="absolute inset-0 pointer-events-none"
+        >
+          {/* Camera indicator */}
+          <motion.div
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
+            className="absolute top-4 left-4 w-12 h-12 rounded-lg border-2 border-accent/50 bg-black/30 flex items-center justify-center backdrop-blur-sm"
+          >
+            <span className="text-accent text-lg">📹</span>
+          </motion.div>
+
+          {/* Hand detection visualization */}
+          {hands.map((hand, i) => (
+            <motion.div
+              key={i}
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+              className="absolute pointer-events-none"
+              style={{ left: hand.x - 20, top: hand.y - 20 }}
+            >
+              {/* Hand circle */}
+              <motion.svg
+                width="40"
+                height="40"
+                viewBox="0 0 40 40"
+                className="absolute inset-0"
               >
-                <Pen className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setTool('eraser')}
-                className={`p-2 rounded-lg transition-colors ${
-                  tool === 'eraser'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted hover:bg-muted/80 text-muted-foreground'
-                }`}
-                title="Eraser"
-              >
-                <Eraser className="w-4 h-4" />
-              </button>
-
-              <div className="h-px bg-border" />
-
-              {/* Color Picker */}
-              {tool === 'pen' && (
-                <div className="space-y-1">
-                  {['#22c55e', '#ef4444', '#3b82f6', '#f59e0b', '#ec4899'].map((c) => (
-                    <button
-                      key={c}
-                      onClick={() => setColor(c)}
-                      className={`w-full h-6 rounded-md transition-all border-2 ${
-                        color === c ? 'border-white' : 'border-transparent'
-                      }`}
-                      style={{ backgroundColor: c }}
-                      title="Color"
-                    />
-                  ))}
-                </div>
-              )}
-
-              <div className="h-px bg-border" />
-
-              {/* Line Width */}
-              <input
-                type="range"
-                min="1"
-                max="10"
-                value={lineWidth}
-                onChange={(e) => setLineWidth(Number(e.target.value))}
-                className="w-full"
-                title="Line width"
-              />
-
-              <div className="h-px bg-border" />
-
-              {/* Action Buttons */}
-              <button
-                onClick={clearDrawings}
-                className="p-2 rounded-lg bg-muted hover:bg-muted/80 text-muted-foreground hover:text-destructive transition-colors"
-                title="Clear canvas"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Canvas */}
-            <div className="flex-1 bg-slate-950 rounded-lg border border-border overflow-hidden relative">
-              <canvas
-                ref={canvasRef}
-                width={1200}
-                height={700}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
-                className="w-full h-full cursor-crosshair"
-              />
-
-              {/* CV Mode Overlay */}
-              <AnimatePresence>
-                {cvMode && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="absolute inset-0 pointer-events-none"
-                  >
-                    {/* Simulated camera feed indicator */}
-                    <div className="absolute top-2 left-2 w-12 h-12 rounded-lg border-2 border-accent/50 bg-black/30 flex items-center justify-center">
-                      <Eye className="w-6 h-6 text-accent/50" />
-                    </div>
-
-                    {/* Hand detection visualization */}
-                    {detectedHands.map((hand, i) => (
-                      <motion.div
-                        key={i}
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        exit={{ scale: 0 }}
-                        className="absolute pointer-events-none"
-                        style={{ left: hand.x - 15, top: hand.y - 15 }}
-                      >
-                        {/* Finger indicators */}
-                        <div className="relative w-7 h-7">
-                          <motion.circle
-                            cx="14"
-                            cy="14"
-                            r="12"
-                            fill="none"
-                            stroke="var(--accent)"
-                            strokeWidth="1.5"
-                            opacity={0.6}
-                          />
-                          {/* Show hand state */}
-                          {hand.isOpen ? (
-                            <div className="absolute inset-0 flex items-center justify-center text-accent text-xs font-bold">✋</div>
-                          ) : (
-                            <div className="absolute inset-0 flex items-center justify-center text-accent text-xs font-bold">✊</div>
-                          )}
-                        </div>
-                        {/* Draw indicator for index finger extended */}
-                        {hand.isOpen && (
-                          <motion.div
-                            animate={{ scale: [1, 1.2, 1] }}
-                            transition={{ duration: 1, repeat: Infinity }}
-                            className="absolute -top-1 left-5 w-2 h-2 bg-accent rounded-full"
-                          />
-                        )}
-                      </motion.div>
-                    ))}
-
-                    {/* Instructions overlay */}
-                    <AnimatePresence>
-                      {showCVInstructions && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: 10 }}
-                          className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-4 text-center text-sm text-white"
-                        >
-                          <p className="font-medium">Hand Gesture Mode Active</p>
-                          <p className="text-xs opacity-75 mt-1">
-                            Open hand = Draw • Closed fist = Erase • Pinch = Clear
-                          </p>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </motion.div>
+                <circle
+                  cx="20"
+                  cy="20"
+                  r="16"
+                  fill="none"
+                  stroke="var(--accent)"
+                  strokeWidth="2"
+                  opacity="0.6"
+                />
+                {hand.isOpen && (
+                  <circle
+                    cx="20"
+                    cy="20"
+                    r="12"
+                    fill="var(--accent)"
+                    opacity="0.2"
+                  />
                 )}
-              </AnimatePresence>
-            </div>
+              </motion.svg>
 
-            {/* Participants Panel */}
-            <div className="w-40 bg-card/50 border border-border rounded-lg p-3 flex flex-col gap-2">
-              <h3 className="text-xs font-bold text-muted-foreground uppercase">Participants</h3>
-              <div className="space-y-2">
-                {currentSession?.participants.map((participant) => (
-                  <div
-                    key={participant.id}
-                    className="p-2 rounded-lg bg-muted/50 border border-border text-xs"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-2 h-2 rounded-full"
-                        style={{ backgroundColor: participant.color }}
-                      />
-                      <span className="truncate text-card-foreground">{participant.name}</span>
-                    </div>
+              {/* Hand state indicator */}
+              <motion.div
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ duration: 0.6, repeat: Infinity }}
+                className="absolute inset-0 flex items-center justify-center text-lg font-bold"
+              >
+                {hand.isPinched ? '🤏' : hand.isOpen ? '✋' : '✊'}
+              </motion.div>
+
+              {/* Action label */}
+              <motion.div
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="absolute top-12 left-1/2 -translate-x-1/2 text-xs font-semibold text-accent whitespace-nowrap"
+              >
+                {hand.isPinched ? 'Clear' : hand.isOpen ? 'Draw' : 'Erase'}
+              </motion.div>
+            </motion.div>
+          ))}
+
+          {/* Instructions overlay */}
+          <AnimatePresence>
+            {showInstructions && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                className="absolute inset-x-0 bottom-8 flex justify-center"
+              >
+                <div className="bg-gradient-to-r from-accent/20 to-primary/20 border border-accent/40 backdrop-blur-md rounded-lg p-4 max-w-md text-center">
+                  <p className="text-sm font-semibold text-accent mb-2">Hand Gesture Mode Active</p>
+                  <div className="text-xs text-foreground/80 space-y-1">
+                    <p>✋ Open Hand = Draw</p>
+                    <p>✊ Closed Fist = Erase</p>
+                    <p>🤏 Pinch = Clear Canvas</p>
                   </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="border-t border-border bg-card/95 backdrop-blur px-6 py-3 flex justify-end gap-2">
-            <Button variant="outline" onClick={handleClose}>
-              Close
-            </Button>
-            <Button onClick={handleClose}>
-              <Save className="w-4 h-4 mr-2" />
-              Save & Exit
-            </Button>
-          </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       )}
     </AnimatePresence>

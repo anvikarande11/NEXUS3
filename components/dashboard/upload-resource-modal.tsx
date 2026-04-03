@@ -6,6 +6,7 @@ import { useDashboardStore } from '@/lib/store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useState } from 'react'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 export function UploadResourceModal() {
   const { isUploadOpen, closeUpload, addNode, setCurrentView } = useDashboardStore()
@@ -75,6 +76,13 @@ export function UploadResourceModal() {
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
         >
+          {/* Hidden dialog semantics for accessibility */}
+          <Dialog open={isUploadOpen} onOpenChange={closeUpload}>
+            <DialogHeader className="sr-only">
+              <DialogTitle>Upload Resource</DialogTitle>
+              <DialogDescription>Upload materials and auto-generate mastery path nodes</DialogDescription>
+            </DialogHeader>
+          </Dialog>
           {/* Success State */}
           {showSuccess && (
             <motion.div

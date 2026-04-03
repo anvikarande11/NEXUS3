@@ -50,6 +50,43 @@ export interface ChatMessage {
   timestamp: number
 }
 
+export interface DrawingAction {
+  id: string
+  type: 'stroke' | 'erase' | 'text' | 'clear'
+  timestamp: number
+  participantId: string
+  data: any // stroke path, text content, etc.
+}
+
+export interface Participant {
+  id: string
+  name: string
+  avatar: string
+  color: string
+  cursorX: number
+  cursorY: number
+  isDrawing: boolean
+}
+
+export interface WhiteboardMessage {
+  id: string
+  participantId: string
+  participantName: string
+  content: string
+  timestamp: number
+}
+
+export interface WhiteboardSession {
+  id: string
+  subject: string
+  title: string
+  createdAt: number
+  participants: Participant[]
+  drawings: DrawingAction[]
+  messages: WhiteboardMessage[]
+  isActive: boolean
+}
+
 export interface Node {
   id: string
   label: string
@@ -146,6 +183,25 @@ interface DashboardState {
   startPomodoro: (roomId: string, focusTime: number, breakTime: number) => void
   stopPomodoro: (roomId: string) => void
   onlinePeers: StudyPeer[]
+  
+  // Collaborative Whiteboard
+  isWhiteboardOpen: boolean
+  toggleWhiteboard: () => void
+  currentSession: WhiteboardSession | null
+  startSession: (subject: string, title: string) => void
+  endSession: () => void
+  addDrawing: (action: Omit<DrawingAction, 'id' | 'timestamp'>) => void
+  undoDrawing: () => void
+  redoDrawing: () => void
+  clearDrawings: () => void
+  addParticipant: (participant: Participant) => void
+  removeParticipant: (participantId: string) => void
+  updateParticipantCursor: (participantId: string, x: number, y: number) => void
+  addWhiteboardMessage: (message: Omit<WhiteboardMessage, 'id' | 'timestamp'>) => void
+  drawingUndoStack: DrawingAction[]
+  drawingRedoStack: DrawingAction[]
+  setCVModeActive: (active: boolean) => void
+  isCVModeActive: boolean
   
   // Actions
   toggleSidebar: () => void
@@ -334,6 +390,131 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     { id: 'p3', name: 'Sam', avatar: 'SM', status: 'available', topic: 'Joins & Subqueries', timeOnline: 20 },
     { id: 'p4', name: 'Casey', avatar: 'CY', status: 'away', topic: 'Math', timeOnline: 120 },
   ],
+  
+  // Collaborative Whiteboard
+  isWhiteboardOpen: false,
+  toggleWhiteboard: () => set((state) => ({ isWhiteboardOpen: !state.isWhiteboardOpen })),
+  currentSession: null,
+  startSession: (subject, title) => set({
+    currentSession: {
+      id: crypto.randomUUID(),
+      subject,
+      title,
+      createdAt: Date.now(),
+      participants: [{
+        id: 'user-1',
+        name: 'You',
+        avatar: 'ME',
+        color: '#22c55e',
+        cursorX: 0,
+        cursorY: 0,
+        isDrawing: false
+      }],
+      drawings: [],
+      messages: [],
+      isActive: true
+    }
+  }),
+  endSession: () => set({ currentSession: null }),
+  drawingUndoStack: [],
+  drawingRedoStack: [],
+  
+  addDrawing: (action) => set((state) => {
+    if (!state.currentSession) return state
+    const newAction = { ...action, id: crypto.randomUUID(), timestamp: Date.now() }
+    return {
+      currentSession: {
+        ...state.currentSession,
+        drawings: [...state.currentSession.drawings, newAction]
+      },
+      drawingUndoStack: [...state.drawingUndoStack, newAction],
+      drawingRedoStack: []
+    }
+  }),
+  
+  undoDrawing: () => set((state) => {
+    if (!state.currentSession || state.drawingUndoStack.length === 0) return state
+    const lastAction = state.drawingUndoStack[state.drawingUndoStack.length - 1]
+    return {
+      currentSession: {
+        ...state.currentSession,
+        drawings: state.currentSession.drawings.filter(d => d.id !== lastAction.id)
+      },
+      drawingUndoStack: state.drawingUndoStack.slice(0, -1),
+      drawingRedoStack: [...state.drawingRedoStack, lastAction]
+    }
+  }),
+  
+  redoDrawing: () => set((state) => {
+    if (!state.currentSession || state.drawingRedoStack.length === 0) return state
+    const lastAction = state.drawingRedoStack[state.drawingRedoStack.length - 1]
+    return {
+      currentSession: {
+        ...state.currentSession,
+        drawings: [...state.currentSession.drawings, lastAction]
+      },
+      drawingRedoStack: state.drawingRedoStack.slice(0, -1),
+      drawingUndoStack: [...state.drawingUndoStack, lastAction]
+    }
+  }),
+  
+  clearDrawings: () => set((state) => {
+    if (!state.currentSession) return state
+    return {
+      currentSession: { ...state.currentSession, drawings: [] },
+      drawingUndoStack: [],
+      drawingRedoStack: []
+    }
+  }),
+  
+  addParticipant: (participant) => set((state) => {
+    if (!state.currentSession) return state
+    return {
+      currentSession: {
+        ...state.currentSession,
+        participants: [...state.currentSession.participants, participant]
+      }
+    }
+  }),
+  
+  removeParticipant: (participantId) => set((state) => {
+    if (!state.currentSession) return state
+    return {
+      currentSession: {
+        ...state.currentSession,
+        participants: state.currentSession.participants.filter(p => p.id !== participantId)
+      }
+    }
+  }),
+  
+  updateParticipantCursor: (participantId, x, y) => set((state) => {
+    if (!state.currentSession) return state
+    return {
+      currentSession: {
+        ...state.currentSession,
+        participants: state.currentSession.participants.map(p =>
+          p.id === participantId ? { ...p, cursorX: x, cursorY: y } : p
+        )
+      }
+    }
+  }),
+  
+  addWhiteboardMessage: (message) => set((state) => {
+    if (!state.currentSession) return state
+    return {
+      currentSession: {
+        ...state.currentSession,
+        messages: [...state.currentSession.messages, {
+          ...message,
+          id: crypto.randomUUID(),
+          timestamp: Date.now()
+        }]
+      }
+    }
+  }),
+  
+  isCVModeActive: false,
+  setCVModeActive: (active) => set({ isCVModeActive: active }),
   
   // Actions
   toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
