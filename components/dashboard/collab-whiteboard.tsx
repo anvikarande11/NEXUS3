@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Pen, Eraser, Trash2, Save } from 'lucide-react'
+import { X, Pen, Eraser, Trash2, Save, Eye, EyeOff, Hand } from 'lucide-react'
 import { useDashboardStore, type CollabDrawing } from '@/lib/store'
 import { Button } from '@/components/ui/button'
 
@@ -19,12 +19,17 @@ export function CollabWhiteboard() {
   } = useDashboardStore()
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [tool, setTool] = useState<'pen' | 'eraser'>('pen')
   const [color, setColor] = useState('#22c55e')
   const [lineWidth, setLineWidth] = useState(2)
   const [lastX, setLastX] = useState(0)
   const [lastY, setLastY] = useState(0)
+  const [cvMode, setCvMode] = useState(false)
+  const [showCVInstructions, setShowCVInstructions] = useState(false)
+  const [detectedHands, setDetectedHands] = useState<Array<{ x: number; y: number; isOpen: boolean }>>([])
+  const [cameraActive, setCameraActive] = useState(false)
 
   // Initialize session
   useEffect(() => {
@@ -40,6 +45,37 @@ export function CollabWhiteboard() {
       })
     }
   }, [isWhiteboardOpen, currentSession, startSession, addParticipant])
+
+  // Initialize CV mode - show instructions on first toggle
+  useEffect(() => {
+    if (cvMode && !showCVInstructions) {
+      setShowCVInstructions(true)
+      const timer = setTimeout(() => setShowCVInstructions(false), 4000)
+      return () => clearTimeout(timer)
+    }
+  }, [cvMode])
+
+  // Simulate hand gesture detection
+  useEffect(() => {
+    if (!cvMode) {
+      setCameraActive(false)
+      return
+    }
+
+    setCameraActive(true)
+    // Simulate hand detection with random positions
+    const interval = setInterval(() => {
+      if (canvasRef.current) {
+        const x = Math.random() * canvasRef.current.width
+        const y = Math.random() * canvasRef.current.height
+        setDetectedHands([
+          { x, y, isOpen: Math.random() > 0.5 }
+        ])
+      }
+    }, 200)
+
+    return () => clearInterval(interval)
+  }, [cvMode])
 
   // Redraw canvas when drawings change
   useEffect(() => {
@@ -153,14 +189,41 @@ export function CollabWhiteboard() {
               </h2>
               <p className="text-sm text-muted-foreground">
                 {currentSession?.participants.length || 1} participant{(currentSession?.participants.length || 1) !== 1 ? 's' : ''}
+                {cvMode && ' • Hand Gesture Mode Active'}
               </p>
             </div>
-            <button
-              onClick={handleClose}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {/* CV Mode Toggle */}
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setCvMode(!cvMode)}
+                className={`px-3 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-all ${
+                  cvMode
+                    ? 'bg-accent text-accent-foreground'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                }`}
+                title="Computer Vision Mode"
+              >
+                {cvMode ? (
+                  <>
+                    <Hand className="w-4 h-4" />
+                    CV Mode On
+                  </>
+                ) : (
+                  <>
+                    <Hand className="w-4 h-4 opacity-50" />
+                    CV Mode
+                  </>
+                )}
+              </motion.button>
+              <button
+                onClick={handleClose}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Canvas and Toolbar */}
@@ -236,7 +299,7 @@ export function CollabWhiteboard() {
             </div>
 
             {/* Canvas */}
-            <div className="flex-1 bg-slate-950 rounded-lg border border-border overflow-hidden">
+            <div className="flex-1 bg-slate-950 rounded-lg border border-border overflow-hidden relative">
               <canvas
                 ref={canvasRef}
                 width={1200}
@@ -247,6 +310,79 @@ export function CollabWhiteboard() {
                 onMouseLeave={handleMouseUp}
                 className="w-full h-full cursor-crosshair"
               />
+
+              {/* CV Mode Overlay */}
+              <AnimatePresence>
+                {cvMode && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 pointer-events-none"
+                  >
+                    {/* Simulated camera feed indicator */}
+                    <div className="absolute top-2 left-2 w-12 h-12 rounded-lg border-2 border-accent/50 bg-black/30 flex items-center justify-center">
+                      <Eye className="w-6 h-6 text-accent/50" />
+                    </div>
+
+                    {/* Hand detection visualization */}
+                    {detectedHands.map((hand, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        exit={{ scale: 0 }}
+                        className="absolute pointer-events-none"
+                        style={{ left: hand.x - 15, top: hand.y - 15 }}
+                      >
+                        {/* Finger indicators */}
+                        <div className="relative w-7 h-7">
+                          <motion.circle
+                            cx="14"
+                            cy="14"
+                            r="12"
+                            fill="none"
+                            stroke="var(--accent)"
+                            strokeWidth="1.5"
+                            opacity={0.6}
+                          />
+                          {/* Show hand state */}
+                          {hand.isOpen ? (
+                            <div className="absolute inset-0 flex items-center justify-center text-accent text-xs font-bold">✋</div>
+                          ) : (
+                            <div className="absolute inset-0 flex items-center justify-center text-accent text-xs font-bold">✊</div>
+                          )}
+                        </div>
+                        {/* Draw indicator for index finger extended */}
+                        {hand.isOpen && (
+                          <motion.div
+                            animate={{ scale: [1, 1.2, 1] }}
+                            transition={{ duration: 1, repeat: Infinity }}
+                            className="absolute -top-1 left-5 w-2 h-2 bg-accent rounded-full"
+                          />
+                        )}
+                      </motion.div>
+                    ))}
+
+                    {/* Instructions overlay */}
+                    <AnimatePresence>
+                      {showCVInstructions && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 10 }}
+                          className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-4 text-center text-sm text-white"
+                        >
+                          <p className="font-medium">Hand Gesture Mode Active</p>
+                          <p className="text-xs opacity-75 mt-1">
+                            Open hand = Draw • Closed fist = Erase • Pinch = Clear
+                          </p>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Participants Panel */}

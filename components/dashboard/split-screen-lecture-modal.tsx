@@ -1,10 +1,11 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Play, Volume2, Settings, BookOpen, Lightbulb } from 'lucide-react'
+import { X, Play, Volume2, Settings, BookOpen, Lightbulb, Loader2 } from 'lucide-react'
 import { useDashboardStore } from '@/lib/store'
 import { mockResources, mockClassPaths, mockSubjects } from '@/lib/mock-data'
 import { Button } from '@/components/ui/button'
+import { useState, useEffect } from 'react'
 
 function mockLectureSummary(nodeLabel: string) {
   return {
@@ -20,8 +21,50 @@ function mockLectureSummary(nodeLabel: string) {
   }
 }
 
+function TypingBulletPoint({ text, delay }: { text: string; delay: number }) {
+  const [displayedText, setDisplayedText] = useState('')
+  const [isComplete, setIsComplete] = useState(false)
+
+  useEffect(() => {
+    if (!text) return
+
+    let index = 0
+    const timer = setTimeout(() => {
+      const interval = setInterval(() => {
+        if (index < text.length) {
+          setDisplayedText(text.slice(0, index + 1))
+          index++
+        } else {
+          clearInterval(interval)
+          setIsComplete(true)
+        }
+      }, 30)
+
+      return () => clearInterval(interval)
+    }, delay)
+
+    return () => clearTimeout(timer)
+  }, [text, delay])
+
+  return (
+    <motion.li
+      initial={{ opacity: 0, x: -10 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: delay / 1000 }}
+      className="flex gap-2 text-xs text-muted-foreground"
+    >
+      <span className="text-primary font-bold flex-shrink-0">•</span>
+      <span>
+        {displayedText}
+        {!isComplete && <motion.span animate={{ opacity: [1, 0] }} transition={{ duration: 0.5, repeat: Infinity }} className="text-primary">_</motion.span>}
+      </span>
+    </motion.li>
+  )
+}
+
 export function SplitScreenLectureModal() {
   const { isLectureModalOpen, lectureModalNodeId, closeLectureModal, classPaths } = useDashboardStore()
+  const [isSummaryLoading, setIsSummaryLoading] = useState(true)
 
   // Find the node
   let node = null
@@ -37,6 +80,13 @@ export function SplitScreenLectureModal() {
       break
     }
   }
+
+  useEffect(() => {
+    // Simulate summary generation delay
+    setIsSummaryLoading(true)
+    const timer = setTimeout(() => setIsSummaryLoading(false), 800)
+    return () => clearTimeout(timer)
+  }, [lectureModalNodeId])
 
   if (!isLectureModalOpen || !node || !subject) {
     return null
@@ -173,23 +223,44 @@ export function SplitScreenLectureModal() {
                       transition={{ delay: 0.3 }}
                       className="space-y-3"
                     >
-                      <h3 className="font-semibold text-sm text-card-foreground flex items-center gap-2">
-                        <BookOpen className="w-4 h-4 text-primary" />
-                        Live Summary
-                      </h3>
-                      <ul className="space-y-2">
-                        {summary.bullets.map((bullet, i) => (
-                          <motion.li
-                            key={i}
-                            initial={{ opacity: 0, x: -10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: 0.4 + i * 0.05 }}
-                            className="flex gap-2 text-xs text-muted-foreground"
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-sm text-card-foreground flex items-center gap-2">
+                          <BookOpen className="w-4 h-4 text-primary" />
+                          Live Summary
+                        </h3>
+                        {isSummaryLoading && (
+                          <motion.div
+                            animate={{ rotate: 360 }}
+                            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
                           >
-                            <span className="text-primary font-bold flex-shrink-0">•</span>
-                            <span>{bullet}</span>
-                          </motion.li>
-                        ))}
+                            <Loader2 className="w-3 h-3 text-primary" />
+                          </motion.div>
+                        )}
+                      </div>
+                      <ul className="space-y-2">
+                        {isSummaryLoading ? (
+                          // Loading skeleton
+                          Array.from({ length: 5 }).map((_, i) => (
+                            <motion.li
+                              key={i}
+                              initial={{ opacity: 0.5 }}
+                              animate={{ opacity: 1 }}
+                              transition={{ duration: 1, repeat: Infinity, repeatType: 'reverse' }}
+                              className="h-4 bg-muted/50 rounded flex gap-2"
+                            >
+                              <span className="text-primary font-bold flex-shrink-0">•</span>
+                              <div className="h-3 bg-muted rounded flex-1" />
+                            </motion.li>
+                          ))
+                        ) : (
+                          summary.bullets.map((bullet, i) => (
+                            <TypingBulletPoint
+                              key={i}
+                              text={bullet}
+                              delay={200 + i * 100}
+                            />
+                          ))
+                        )}
                       </ul>
                     </motion.div>
 
@@ -198,7 +269,7 @@ export function SplitScreenLectureModal() {
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: 0.6 }}
-                      className="p-3 rounded-lg bg-primary/10 border border-primary/20 space-y-2"
+                      className="p-3 rounded-lg bg-gradient-to-br from-primary/10 to-accent/5 border border-primary/20 space-y-2"
                     >
                       <h4 className="font-semibold text-xs text-primary flex items-center gap-2">
                         <Lightbulb className="w-4 h-4" />

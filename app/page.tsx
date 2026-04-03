@@ -152,33 +152,37 @@ function TopBar() {
       {/* Search / Command Bar */}
       <button
         onClick={toggleCommandPalette}
-        className="flex items-center gap-3 px-4 py-2 bg-muted/50 rounded-xl border border-border hover:border-primary/30 transition-colors min-w-[280px]"
+        className="flex items-center gap-3 px-4 py-2 bg-muted/50 rounded-xl border border-border hover:border-primary/30 transition-colors min-w-[280px] light:bg-muted/70 light:border-muted light:hover:bg-muted light:text-foreground"
       >
-        <Search className="w-4 h-4 text-muted-foreground" />
-        <span className="text-sm text-muted-foreground">Search or type command...</span>
-        <div className="ml-auto flex items-center gap-1 px-1.5 py-0.5 bg-muted rounded text-xs text-muted-foreground">
+        <Search className="w-4 h-4 text-muted-foreground light:text-muted-foreground" />
+        <span className="text-sm text-muted-foreground light:text-foreground">Search or type command...</span>
+        <div className="ml-auto flex items-center gap-1 px-1.5 py-0.5 bg-muted rounded text-xs text-muted-foreground light:bg-primary/10 light:text-primary">
           <Command className="w-3 h-3" />
           <span>K</span>
         </div>
       </button>
 
       {/* Right Side */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2">
         {/* Streak */}
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-warning/10 border border-warning/20 rounded-xl">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-warning/10 border border-warning/20 rounded-xl light:bg-warning/15 light:border-warning/30">
           <Flame className="w-4 h-4 text-warning" />
           <span className="text-sm font-medium text-warning">7 day streak</span>
         </div>
+
+        {/* Divider */}
+        <div className="w-px h-6 bg-border light:bg-border/50" />
 
         {/* Upload Button */}
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={openUpload}
-          className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          className="px-3 py-2 rounded-lg hover:bg-muted transition-all text-muted-foreground hover:text-foreground light:hover:bg-primary/10 light:hover:text-primary light:text-muted-foreground flex items-center gap-2 text-sm font-medium"
           title="Upload resource"
         >
           <Upload className="w-4 h-4" />
+          <span className="hidden sm:inline text-xs">Upload</span>
         </motion.button>
 
         {/* Chat Button */}
@@ -186,10 +190,11 @@ function TopBar() {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={toggleChat}
-          className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          className="px-3 py-2 rounded-lg hover:bg-muted transition-all text-muted-foreground hover:text-foreground light:hover:bg-primary/10 light:hover:text-primary light:text-muted-foreground flex items-center gap-2 text-sm font-medium"
           title="Nexus AI Chat"
         >
           <MessageCircle className="w-4 h-4" />
+          <span className="hidden sm:inline text-xs">Nexus AI</span>
         </motion.button>
 
         {/* Peer Study Button */}
@@ -197,18 +202,22 @@ function TopBar() {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={togglePeerStudy}
-          className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          className="px-3 py-2 rounded-lg hover:bg-muted transition-all text-muted-foreground hover:text-foreground light:hover:bg-primary/10 light:hover:text-primary light:text-muted-foreground flex items-center gap-2 text-sm font-medium"
           title="Peer Study Circle"
         >
           <Users className="w-4 h-4" />
+          <span className="hidden sm:inline text-xs">Peers</span>
         </motion.button>
+
+        {/* Divider */}
+        <div className="w-px h-6 bg-border light:bg-border/50" />
 
         {/* Theme Toggle */}
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground relative"
+          className="p-2 rounded-lg hover:bg-muted transition-all text-muted-foreground hover:text-foreground light:hover:bg-muted/50 relative"
           title="Toggle theme"
           suppressHydrationWarning
         >
@@ -229,7 +238,7 @@ function TopBar() {
         {/* Profile */}
         <button
           onClick={toggleBlackoutMode}
-          className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center hover:bg-primary/30 transition-colors"
+          className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center hover:bg-primary/30 transition-all light:bg-primary/15 light:hover:bg-primary/25"
           title="Focus mode"
         >
           <User className="w-4 h-4 text-primary" />

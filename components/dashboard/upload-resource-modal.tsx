@@ -1,20 +1,22 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Upload, FileText, Link2, Video, StickyNote, Plus, Check } from 'lucide-react'
+import { X, Upload, FileText, Link2, Video, StickyNote, Plus, Check, Sparkles, ArrowRight } from 'lucide-react'
 import { useDashboardStore } from '@/lib/store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useState } from 'react'
 
 export function UploadResourceModal() {
-  const { isUploadOpen, closeUpload, addNode } = useDashboardStore()
+  const { isUploadOpen, closeUpload, addNode, setCurrentView } = useDashboardStore()
   const [dragActive, setDragActive] = useState(false)
   const [selectedClass, setSelectedClass] = useState<string>('')
   const [resourceName, setResourceName] = useState('')
   const [resourceType, setResourceType] = useState<'pdf' | 'video' | 'link' | 'note'>('pdf')
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [isCreating, setIsCreating] = useState(false)
+  const [showSuccess, setShowSuccess] = useState(false)
+  const [createdNodeName, setCreatedNodeName] = useState('')
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault()
@@ -51,10 +53,11 @@ export function UploadResourceModal() {
       // Simulate file upload and node creation
       setTimeout(() => {
         addNode(selectedClass, resourceName)
+        setCreatedNodeName(resourceName)
+        setShowSuccess(true)
         setResourceName('')
         setUploadedFiles([])
         setIsCreating(false)
-        closeUpload()
       }, 600)
     }
   }
@@ -72,33 +75,123 @@ export function UploadResourceModal() {
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
         >
-          <motion.div
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.95, opacity: 0 }}
-            className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
-          >
-            {/* Header */}
-            <div className="border-b border-border p-6 flex items-center justify-between sticky top-0 bg-card">
-              <div>
-                <h2 className="text-lg font-bold text-card-foreground flex items-center gap-2">
-                  <Upload className="w-5 h-5 text-primary" />
-                  Upload Resource
-                </h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Add materials and auto-generate mastery path nodes
-                </p>
-              </div>
-              <button
-                onClick={closeUpload}
-                className="text-muted-foreground hover:text-foreground transition-colors"
+          {/* Success State */}
+          {showSuccess && (
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="absolute inset-0 z-50 flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+                className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
               >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+                <div className="p-8 text-center space-y-4">
+                  {/* Success Icon */}
+                  <motion.div
+                    initial={{ scale: 0, rotate: -180 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    transition={{ delay: 0.1, type: 'spring' }}
+                    className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto"
+                  >
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                    >
+                      <Sparkles className="w-8 h-8 text-primary" />
+                    </motion.div>
+                  </motion.div>
 
-            {/* Content */}
-            <div className="p-6 space-y-4">
+                  {/* Success Message */}
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-bold text-card-foreground">
+                      Node Created!
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      &quot;{createdNodeName}&quot; has been added to your mastery path
+                    </p>
+                  </div>
+
+                  {/* AI Summary Status */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                    className="p-3 rounded-lg bg-primary/5 border border-primary/20 space-y-2"
+                  >
+                    <div className="flex items-center gap-2 text-xs text-primary">
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                      >
+                        <Upload className="w-3 h-3" />
+                      </motion.div>
+                      <span className="font-medium">AI summary generating...</span>
+                    </div>
+                  </motion.div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1 rounded-lg"
+                      onClick={() => {
+                        setShowSuccess(false)
+                        closeUpload()
+                      }}
+                    >
+                      Close
+                    </Button>
+                    <Button
+                      className="flex-1 rounded-lg flex items-center gap-2"
+                      onClick={() => {
+                        setShowSuccess(false)
+                        closeUpload()
+                        setCurrentView('class-path')
+                      }}
+                    >
+                      View in Mastery Path
+                      <ArrowRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+
+          {/* Upload Form */}
+          <AnimatePresence mode="wait">
+            {!showSuccess && (
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+              >
+                {/* Header */}
+                <div className="border-b border-border p-6 flex items-center justify-between sticky top-0 bg-card">
+                  <div>
+                    <h2 className="text-lg font-bold text-card-foreground flex items-center gap-2">
+                      <Upload className="w-5 h-5 text-primary" />
+                      Upload Resource
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Add materials and auto-generate mastery path nodes
+                    </p>
+                  </div>
+                  <button
+                    onClick={closeUpload}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Content */}
+                <div className="p-6 space-y-4">
               {/* Select Class */}
               <div>
                 <label className="text-sm font-medium text-card-foreground mb-2 block">
@@ -245,7 +338,9 @@ export function UploadResourceModal() {
                 {isCreating ? 'Creating...' : 'Create Node'}
               </Button>
             </div>
-          </motion.div>
+            </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       )}
     </AnimatePresence>

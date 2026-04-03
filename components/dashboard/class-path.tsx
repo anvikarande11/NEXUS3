@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Trash2, CheckCircle2, Circle, Filter, Download, Video, Check } from 'lucide-react'
+import { Plus, Trash2, CheckCircle2, Circle, Filter, Download, Video, Check, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useDashboardStore, type Node } from '@/lib/store'
 import { mockSubjects, mockResources, mockClassPaths } from '@/lib/mock-data'
@@ -31,12 +31,14 @@ function SVGNodeCanvas({
   nodes, 
   onNodeClick,
   canvasWidth = 800,
-  canvasHeight = 300
+  canvasHeight = 300,
+  newNodeId = null
 }: {
   nodes: Node[]
   onNodeClick: (nodeId: string) => void
   canvasWidth?: number
   canvasHeight?: number
+  newNodeId?: string | null
 }) {
   const positions = useMemo(
     () => calculateNodePositions(nodes.length, canvasWidth, canvasHeight),
@@ -50,6 +52,21 @@ function SVGNodeCanvas({
       className="bg-muted/30 rounded-lg border border-border w-full"
       viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
     >
+      {/* Gradient definitions for visual effects */}
+      <defs>
+        <radialGradient id="nodeGlowGradient" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
+        </radialGradient>
+        <filter id="nodeGlow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+          <feMerge>
+            <feMergeNode in="coloredBlur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+
       {/* Bezier curves connecting nodes */}
       {positions.length > 1 && positions.map((pos, i) => {
         if (i === positions.length - 1) return null
@@ -79,9 +96,24 @@ function SVGNodeCanvas({
       {nodes.map((node, i) => {
         const pos = positions[i]
         if (!pos) return null
+        const isNewNode = node.id === newNodeId
 
         return (
           <g key={node.id} onClick={() => onNodeClick(node.id)}>
+            {/* Glow effect for completed or new nodes */}
+            {(node.completed || isNewNode) && (
+              <motion.circle
+                cx={pos.x}
+                cy={pos.y}
+                r={28}
+                fill="url(#nodeGlowGradient)"
+                filter="url(#nodeGlow)"
+                initial={{ r: 28, opacity: 1 }}
+                animate={isNewNode ? { r: [28, 36, 28], opacity: [1, 0.6, 1] } : { opacity: 0.6 }}
+                transition={isNewNode ? { duration: 1, repeat: Infinity } : { duration: 0 }}
+              />
+            )}
+
             {/* Node circle */}
             <motion.circle
               cx={pos.x}
@@ -89,13 +121,14 @@ function SVGNodeCanvas({
               r={24}
               fill={node.completed ? 'var(--primary)' : 'var(--secondary)'}
               fillOpacity={node.completed ? 0.2 : 0.1}
-              stroke={node.completed ? 'var(--primary)' : 'var(--muted-foreground)'}
-              strokeWidth="2"
+              stroke={node.completed ? 'var(--primary)' : isNewNode ? 'var(--accent)' : 'var(--muted-foreground)'}
+              strokeWidth={isNewNode ? 3 : 2}
               className="cursor-pointer hover:opacity-80 transition-opacity"
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
-              transition={{ delay: i * 0.1 }}
+              transition={{ delay: i * 0.1, type: 'spring' }}
               whileHover={{ scale: 1.15 }}
+              filter={isNewNode ? 'url(#nodeGlow)' : undefined}
             />
 
             {/* Checkmark or number */}
@@ -105,7 +138,7 @@ function SVGNodeCanvas({
               textAnchor="middle"
               fontSize="16"
               fontWeight="bold"
-              fill={node.completed ? 'var(--primary)' : 'var(--muted-foreground)'}
+              fill={node.completed ? 'var(--primary)' : isNewNode ? 'var(--accent)' : 'var(--muted-foreground)'}
               className="pointer-events-none"
             >
               {node.completed ? '✓' : i + 1}
@@ -119,6 +152,19 @@ function SVGNodeCanvas({
                 r="6"
                 fill="var(--primary)"
                 className="text-primary"
+              />
+            )}
+
+            {/* Sparkle for new node */}
+            {isNewNode && (
+              <motion.circle
+                cx={pos.x - 20}
+                cy={pos.y - 15}
+                r="3"
+                fill="var(--accent)"
+                initial={{ opacity: 1, scale: 1 }}
+                animate={{ opacity: 0, scale: 0 }}
+                transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 0.5 }}
               />
             )}
 
@@ -205,6 +251,7 @@ function NodePopover({
 export function ClassPath() {
   const { classPaths, activeClassId, resourceFilter, selectedNodeId, setSelectedNode, addNode, deleteNode, openLectureModal } = useDashboardStore()
   const [newNodeName, setNewNodeName] = useState('')
+  const [lastAddedNodeId, setLastAddedNodeId] = useState<string | null>(null)
 
   const classPath = classPaths.find(cp => cp.id === activeClassId)
   const subject = classPath ? mockSubjects.find(s => s.id === classPath.subjectId) : null
@@ -239,7 +286,12 @@ export function ClassPath() {
   }
 
   const handleAddNode = (label: string) => {
+    const newNodeId = crypto.randomUUID()
+    // Temporarily track the new node ID for animation
+    setLastAddedNodeId(newNodeId)
     addNode(classPath.id, label)
+    // Clear the highlight after animation completes
+    setTimeout(() => setLastAddedNodeId(null), 2000)
   }
 
   const handleDeleteNode = (nodeId: string) => {
@@ -294,6 +346,7 @@ export function ClassPath() {
           }}
           canvasWidth={Math.max(800, displayNodes.length * 150)}
           canvasHeight={300}
+          newNodeId={lastAddedNodeId}
         />
       </div>
 
