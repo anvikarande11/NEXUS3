@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -239,6 +240,9 @@ export function FunkyCalendar() {
                 day: 'numeric' 
               })}
             </DialogTitle>
+            <DialogDescription>
+              Add or view notes for this day
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
